@@ -53,3 +53,15 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
             detail="No extractable text found in PDF (it may be a scanned/image-only PDF).",
         )
     return text
+
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+    chunks = []
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(start + chunk_size, length)
+        chunks.append(text[start:end])
+        if end == length:
+            break
+        start = end - overlap
+    return chunks
