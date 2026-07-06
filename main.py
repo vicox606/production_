@@ -32,3 +32,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+SESSIONS: Dict[str, Dict] = {}
+
+def extract_text_from_pdf(file_bytes: bytes) -> str:
+    reader = PdfReader(io.BytesIO(file_bytes))
+    if reader.is_encrypted:
+        try:
+            reader.decrypt("")
+        except Exception:
+            raise HTTPException(status_code=400, detail="PDF is password protected.")
+ 
+    pages_text = []
+    for page in reader.pages:
+        pages_text.append(page.extract_text() or "")
+ 
+    text = "\n".join(pages_text).strip()
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail="No extractable text found in PDF (it may be a scanned/image-only PDF).",
+        )
+    return text
