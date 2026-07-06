@@ -97,3 +97,18 @@ def get_session_or_404(session_id: str) -> Dict:
         raise HTTPException(status_code=404, detail="Session not found. Upload a PDF first.")
     return session
  
+class ChatRequest(BaseModel):
+    session_id: str
+    question: str
+ 
+ 
+class ChatResponse(BaseModel):
+    answer: str
+    session_id: str
+ 
+ 
+class UploadResponse(BaseModel):
+    session_id: str
+    filename: str
+    num_chunks: int
+    num_characters: int
