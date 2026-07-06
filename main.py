@@ -112,3 +112,70 @@ class UploadResponse(BaseModel):
     filename: str
     num_chunks: int
     num_characters: int
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_pdf(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only .pdf files are supported.")
+ 
+    file_bytes = await file.read()
+    text = extract_text_from_pdf(file_bytes)
+    chunks = chunk_text(text)
+ 
+    session_id = str(uuid.uuid4())
+    SESSIONS[session_id] = {
+        "filename": file.filename,
+        "chunks": chunks,
+        "history": [],
+    }
+ 
+    return UploadResponse(
+        session_id=session_id,
+        filename=file.filename,
+        num_chunks=len(chunks),
+        num_characters=len(text),
+    )
+ 
+ 
+@app.post("/chat", response_model=ChatResponse)
+async def chat(payload: ChatRequest):
+    session = get_session_or_404(payload.session_id)
+ 
+    relevant_chunks = get_relevant_chunks(session["chunks"], payload.question)
+    prompt = build_prompt(relevant_chunks, payload.question)
+ 
+    try:
+        response = ollama_client.chat(
+            model=OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        answer = response["message"]["content"]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Error contacting Ollama at {OLLAMA_HOST} (model '{OLLAMA_MODEL}'): {exc}. "
+                "Make sure 'ollama serve' is running and the model has been pulled."
+            ),
+        )
+ 
+    session["history"].append({"question": payload.question, "answer": answer})
+ 
+    return ChatResponse(answer=answer, session_id=payload.session_id)
+ 
+ 
+@app.get("/sessions")
+async def list_sessions():
+    return {
+        sid: {"filename": s["filename"], "num_chunks": len(s["chunks"]), "turns": len(s["history"])}
+        for sid, s in SESSIONS.items()
+    }
+ 
+ 
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    if session_id not in SESSIONS:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    del SESSIONS[session_id]
+    return {"deleted": session_id}
+ 
