@@ -65,3 +65,35 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
             break
         start = end - overlap
     return chunks
+
+def get_relevant_chunks(chunks: List[str], question: str, top_k: int = TOP_K_CHUNKS) -> List[str]:
+    if len(chunks) <= top_k:
+        return chunks
+ 
+    vectorizer = TfidfVectorizer(stop_words="english")
+    matrix = vectorizer.fit_transform(chunks + [question])
+    doc_vectors, query_vector = matrix[:-1], matrix[-1]
+ 
+    similarities = cosine_similarity(query_vector, doc_vectors)[0]
+    top_indices = similarities.argsort()[::-1][:top_k]
+    # Preserve original document order for more coherent context
+    top_indices = sorted(top_indices)
+    return [chunks[i] for i in top_indices]
+
+def build_prompt(context_chunks: List[str], question: str) -> str:
+    context = "\n\n---\n\n".join(context_chunks)
+    return (
+        "You are a helpful assistant answering questions about a PDF document. "
+        "Use ONLY the context below to answer. If the answer isn't in the context, "
+        "say you don't have enough information from the document.\n\n"
+        f"CONTEXT:\n{context}\n\n"
+        f"QUESTION:\n{question}"
+    )
+ 
+ 
+def get_session_or_404(session_id: str) -> Dict:
+    session = SESSIONS.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found. Upload a PDF first.")
+    return session
+ 
