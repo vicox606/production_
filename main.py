@@ -179,3 +179,9 @@ async def delete_session(session_id: str):
     del SESSIONS[session_id]
     return {"deleted": session_id}
  
+app.mount("/static", StaticFiles(directory="static"), name="static")
+ 
+ 
+@app.get("/")
+async def root():
+    return FileResponse("static/index.html")
