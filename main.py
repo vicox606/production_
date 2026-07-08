@@ -17,9 +17,9 @@ import ollama
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
-CHUNK_SIZE = 1200          # characters per chunk
-CHUNK_OVERLAP = 200        # overlap between chunks to avoid cutting context
-TOP_K_CHUNKS = 5           # how many chunks to feed the model per question
+CHUNK_SIZE = 1200          
+CHUNK_OVERLAP = 200        
+TOP_K_CHUNKS = 5           
  
 ollama_client = ollama.Client(host=OLLAMA_HOST)
  
@@ -180,7 +180,6 @@ async def delete_session(session_id: str):
     return {"deleted": session_id}
  
 app.mount("/static", StaticFiles(directory="static"), name="static")
- 
  
 @app.get("/")
 async def root():
