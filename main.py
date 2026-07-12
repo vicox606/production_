@@ -1,6 +1,7 @@
 import os
 import uuid
 import io
+import asyncio
 from typing import List, Dict
  
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
@@ -76,7 +77,6 @@ def get_relevant_chunks(chunks: List[str], question: str, top_k: int = TOP_K_CHU
  
     similarities = cosine_similarity(query_vector, doc_vectors)[0]
     top_indices = similarities.argsort()[::-1][:top_k]
-    # Preserve original document order for more coherent context
     top_indices = sorted(top_indices)
     return [chunks[i] for i in top_indices]
 
@@ -91,6 +91,15 @@ def build_prompt(context_chunks: List[str], question: str) -> str:
     )
  
  
+
+
+def call_ollama(prompt: str):
+    return ollama_client.chat(
+        model=OLLAMA_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+
 def get_session_or_404(session_id: str) -> Dict:
     session = SESSIONS.get(session_id)
     if not session:
@@ -119,8 +128,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only .pdf files are supported.")
  
     file_bytes = await file.read()
-    text = extract_text_from_pdf(file_bytes)
-    chunks = chunk_text(text)
+    text = await asyncio.to_thread(extract_text_from_pdf, file_bytes)
+    chunks = await asyncio.to_thread(chunk_text, text)
  
     session_id = str(uuid.uuid4())
     SESSIONS[session_id] = {
@@ -141,13 +150,13 @@ async def upload_pdf(file: UploadFile = File(...)):
 async def chat(payload: ChatRequest):
     session = get_session_or_404(payload.session_id)
  
-    relevant_chunks = get_relevant_chunks(session["chunks"], payload.question)
+    relevant_chunks = await asyncio.to_thread(get_relevant_chunks, session["chunks"], payload.question)
     prompt = build_prompt(relevant_chunks, payload.question)
  
     try:
-        response = ollama_client.chat(
-            model=OLLAMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+        response = await asyncio.to_thread(
+            call_ollama,
+            prompt,
         )
         answer = response["message"]["content"]
     except Exception as exc:
