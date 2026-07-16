@@ -22,10 +22,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 import ollama
 
-# --------------------------------------------------------------------------
-# Config
-# --------------------------------------------------------------------------
-
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
 CHUNK_SIZE = 1200
@@ -36,14 +32,10 @@ THREAD_POOL_SIZE = int(os.environ.get("THREAD_POOL_SIZE", "8"))
 
 ollama_client = ollama.Client(host=OLLAMA_HOST)
 
-# Dedicated thread pool for blocking work (PDF parsing, TF-IDF, Ollama HTTP calls).
-# Kept separate from FastAPI's default executor so we can size it deliberately.
+
 executor = ThreadPoolExecutor(max_workers=THREAD_POOL_SIZE, thread_name_prefix="pdf-worker")
 
 
-# --------------------------------------------------------------------------
-# Job system: queue + worker pool + events
-# --------------------------------------------------------------------------
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
@@ -53,7 +45,6 @@ class JobStatus(str, Enum):
 
 
 class Job:
-    """A unit of work processed by a background worker, observable via an asyncio.Event."""
 
     def __init__(self, job_id: str, kind: str, payload: dict):
         self.id = job_id
@@ -101,14 +92,13 @@ class Job:
 
 JOBS: Dict[str, Job] = {}
 JOB_QUEUE: "asyncio.Queue[Job]" = asyncio.Queue()
-SESSIONS: Dict[str, Dict] = {}  # session_id -> {"filename", "chunks", "history"}
+SESSIONS: Dict[str, Dict] = {}  
 
-# Live per-worker stats, updated by worker_loop as jobs move through it.
+
 WORKERS: Dict[str, Dict] = {}
 
 
 async def worker_loop(worker_id: str):
-    """Background worker: pulls jobs off the queue and executes them in the thread pool."""
     loop = asyncio.get_running_loop()
     WORKERS[worker_id] = {"state": "idle", "current_job": None, "jobs_processed": 0}
 
@@ -136,8 +126,6 @@ async def worker_loop(worker_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Each worker gets a stable id ("worker-0", "worker-1", ...) used both as the
-    # asyncio task name and as the key in the WORKERS live-stats dict.
     workers = [
         asyncio.create_task(worker_loop(f"worker-{i}"))
         for i in range(NUM_WORKERS)
@@ -156,12 +144,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# --------------------------------------------------------------------------
-# Blocking helpers — run inside the ThreadPoolExecutor, never called directly
-# from an async route.
-# --------------------------------------------------------------------------
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     reader = PdfReader(io.BytesIO(file_bytes))
@@ -214,7 +196,6 @@ def build_prompt(context_chunks: List[str], question: str) -> str:
 
 
 def process_upload_job(payload: dict) -> dict:
-    """Runs in a worker thread: parse + chunk a PDF and register a session."""
     file_bytes = payload["file_bytes"]
     filename = payload["filename"]
 
@@ -233,7 +214,6 @@ def process_upload_job(payload: dict) -> dict:
 
 
 def process_chat_job(payload: dict) -> dict:
-    """Runs in a worker thread: retrieve relevant chunks and call Ollama (blocking HTTP)."""
     session_id = payload["session_id"]
     question = payload["question"]
 
@@ -260,10 +240,6 @@ def process_chat_job(payload: dict) -> dict:
     return {"answer": answer, "session_id": session_id}
 
 
-# --------------------------------------------------------------------------
-# Schemas
-# --------------------------------------------------------------------------
-
 class ChatRequest(BaseModel):
     session_id: str
     question: str
@@ -274,9 +250,7 @@ class JobAccepted(BaseModel):
     status: JobStatus
 
 
-# --------------------------------------------------------------------------
-# Routes — accept requests fast, enqueue work, return a job_id immediately
-# --------------------------------------------------------------------------
+
 
 @app.post("/upload", response_model=JobAccepted, status_code=202)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -316,7 +290,6 @@ async def get_job(job_id: str):
 
 @app.get("/jobs/{job_id}/wait")
 async def wait_for_job(job_id: str, timeout: float = 30.0):
-    """Convenience endpoint: await the job's event directly instead of polling."""
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -329,12 +302,6 @@ async def wait_for_job(job_id: str, timeout: float = 30.0):
 
 @app.get("/events/{job_id}")
 async def stream_job_events(job_id: str):
-    """Server-Sent-Events stream of a job's lifecycle until it completes.
-
-    Emits a distinct event each time something changes:
-      - "status"  -> {status, worker_id}   whenever status or worker assignment changes
-      - "result"  -> full job dict, sent once when the job reaches done/error
-    """
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -387,10 +354,6 @@ async def health():
         "workers": WORKERS,
     }
 
-
-# --------------------------------------------------------------------------
-# Frontend
-# --------------------------------------------------------------------------
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
